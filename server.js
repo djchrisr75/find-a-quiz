@@ -275,33 +275,54 @@ async function geocode(q, country) {
   q = line(q, 120); if (!q) return [];
   const key = (country || '') + '|' + q.toLowerCase();
   if (db.geocache[key] && Date.now() - db.geocache[key].at < 30 * 86400_000) return db.geocache[key].r;
-  if (NO_GEOCODE) return [];
+  if (NO_GEOCODE) return townFallback(q);
   let r = [];
-  try {
-    if (UK_POSTCODE.test(q)) {
-      const j = await getJson(`https://api.postcodes.io/postcodes/${encodeURIComponent(q)}`);
-      if (j.result) r = [{ name: `${j.result.postcode}, ${j.result.admin_district || j.result.parish || ''}`.replace(/, $/, ''), lat: j.result.latitude, lng: j.result.longitude, country: 'GB', postcode: j.result.postcode, town: j.result.admin_district || '' }];
-    } else if (UK_OUTCODE.test(q)) {
-      const j = await getJson(`https://api.postcodes.io/outcodes/${encodeURIComponent(q)}`);
-      if (j.result) r = [{ name: `${j.result.outcode}, ${(j.result.admin_district || [])[0] || ''}`.replace(/, $/, ''), lat: j.result.latitude, lng: j.result.longitude, country: 'GB' }];
-    }
-  } catch (e) { /* not a real postcode: fall through to OpenStreetMap */ }
-  if (!r.length) {
-    // OpenStreetMap's rules: at most one look-up a second, and say who we are
-    const wait = Math.max(0, lastNominatim + 1100 - Date.now()); lastNominatim = Date.now() + wait;
-    if (wait) await new Promise((ok) => setTimeout(ok, wait));
-    const u = new URL('https://nominatim.openstreetmap.org/search');
-    u.searchParams.set('q', q); u.searchParams.set('format', 'jsonv2'); u.searchParams.set('limit', '5'); u.searchParams.set('addressdetails', '1');
-    if (country) u.searchParams.set('countrycodes', country.toLowerCase());
-    if (CONTACT_EMAIL) u.searchParams.set('email', CONTACT_EMAIL);
+  const pc = UK_POSTCODE.exec(q);
+  if (pc || UK_OUTCODE.test(q)) {
     try {
-      const j = await getJson(u.href, { headers: { 'User-Agent': `FindAQuiz/1.0 (${SITE_URL})`, 'Accept-Language': 'en-GB,en' } });
-      r = (j || []).map((x) => ({ name: x.display_name, lat: Number(x.lat), lng: Number(x.lon), country: x.address && x.address.country_code ? x.address.country_code.toUpperCase() : '',
-        postcode: (x.address && x.address.postcode) || '', town: x.address ? (x.address.city || x.address.town || x.address.village || x.address.suburb || '') : '' }));
-    } catch (e) { console.error('geocode failed', e.message); return []; }
+      if (pc) {
+        const j = await getJson(`https://api.postcodes.io/postcodes/${encodeURIComponent(q)}`).catch(() => ({}));
+        if (j.result) r = [{ name: `${j.result.postcode}, ${j.result.admin_district || j.result.parish || ''}`.replace(/, $/, ''), lat: j.result.latitude, lng: j.result.longitude, country: 'GB', postcode: j.result.postcode, town: j.result.admin_district || '' }];
+      }
+      if (!r.length) { // a postcode we can't find exactly: use its area (e.g. "DY1")
+        const out = pc ? pc[1] : q;
+        const j = await getJson(`https://api.postcodes.io/outcodes/${encodeURIComponent(out)}`);
+        if (j.result) r = [{ name: `${j.result.outcode.toUpperCase()}, ${(j.result.admin_district || [])[0] || ''}`.replace(/, $/, ''), lat: j.result.latitude, lng: j.result.longitude, country: 'GB' }];
+      }
+    } catch (e) { /* not a real UK postcode: carry on */ }
   }
+  if (!r.length) r = await nominatim(q, country).catch(() => null) || await nominatim(q, country).catch(() => null) || await photon(q, country).catch((e) => { console.error('geocode failed', e.message); return []; });
+  if (!r.length) return townFallback(q); // nothing found online: try towns we already have quizzes in
   db.geocache[key] = { at: Date.now(), r }; saveSoon();
   return r;
+}
+// OpenStreetMap's own search (at most one look-up a second, and say who we are)
+async function nominatim(q, country) {
+  const wait = Math.max(0, lastNominatim + 1100 - Date.now()); lastNominatim = Date.now() + wait;
+  if (wait) await new Promise((ok) => setTimeout(ok, wait));
+  const u = new URL('https://nominatim.openstreetmap.org/search');
+  u.searchParams.set('q', q); u.searchParams.set('format', 'jsonv2'); u.searchParams.set('limit', '5'); u.searchParams.set('addressdetails', '1');
+  if (country) u.searchParams.set('countrycodes', country.toLowerCase());
+  if (CONTACT_EMAIL) u.searchParams.set('email', CONTACT_EMAIL);
+  const j = await getJson(u.href, { headers: { 'User-Agent': `FindAQuiz/1.0 (${SITE_URL})`, 'Accept-Language': 'en-GB,en' }, signal: AbortSignal.timeout(12000) });
+  return (j || []).map((x) => ({ name: x.display_name, lat: Number(x.lat), lng: Number(x.lon), country: x.address && x.address.country_code ? x.address.country_code.toUpperCase() : '',
+    postcode: (x.address && x.address.postcode) || '', town: x.address ? (x.address.city || x.address.town || x.address.village || x.address.suburb || '') : '' }));
+}
+// Photon: another free OpenStreetMap search, used if the first one is slow or down
+async function photon(q, country) {
+  const j = await getJson(`https://photon.komoot.io/api/?limit=5&lang=en&q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(12000) });
+  return (j.features || []).filter((f) => !country || (f.properties.countrycode || '').toUpperCase() === country).map((f) => {
+    const p = f.properties, [lng, lat] = f.geometry.coordinates;
+    return { name: [p.name, p.city !== p.name ? p.city : '', p.state, p.country].filter(Boolean).join(', '), lat, lng, country: (p.countrycode || '').toUpperCase(), postcode: p.postcode || '', town: p.city || p.name || '' };
+  });
+}
+// Last resort: a town (or town, state) that already has quizzes listed
+function townFallback(q) {
+  const [town, area] = q.toLowerCase().split(',').map((x) => x.trim());
+  const hits = listingsArr().filter((l) => l.status === 'active' && l.lat != null && String(l.town).toLowerCase() === town && (!area || [String(l.region).toLowerCase(), String(l.postcode).toLowerCase().slice(0, area.length)].includes(area)));
+  if (!hits.length) return [];
+  const lat = hits.reduce((n, l) => n + l.lat, 0) / hits.length, lng = hits.reduce((n, l) => n + l.lng, 0) / hits.length;
+  return [{ name: [hits[0].town, hits[0].region].filter(Boolean).join(', '), lat, lng, country: hits[0].country }];
 }
 // On start-up, move each "approximate" pin to its exact UK postcode (100 at a time)
 async function refineSeedPins() {
