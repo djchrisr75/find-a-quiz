@@ -37,7 +37,7 @@
       var q = j.sqSync;
       $('sqStatus').innerHTML = j.sqRunning ? '<b>Importing now…</b> This takes a few minutes. Reload to see the result.' : !q ? 'Not run yet. It runs by itself a minute after the site starts.' :
         q.error ? 'Last import <b>failed</b> on ' + esc(new Date(q.at).toLocaleString('en-GB')) + ': ' + esc(q.error) :
-        'Last import ' + esc(new Date(q.at).toLocaleString('en-GB')) + ': <b>' + q.found + '</b> US events found, ' + q.added + ' added, ' + q.updated + ' updated, ' + (q.skipped || 0) + ' skipped, ' + (q.hidden || 0) + ' taken down' + (q.failed ? ', ' + q.failed + ' couldn’t be read' : '') + '.';
+        'Last import ' + esc(new Date(q.at).toLocaleString('en-GB')) + ': <b>' + q.found + '</b> events found' + (q.usa != null ? ' (' + q.usa + ' USA, ' + q.europe + ' Europe)' : '') + ', ' + (q.duplicate ? q.duplicate + ' already listed, ' : '') + q.added + ' added, ' + q.updated + ' updated, ' + (q.skipped || 0) + ' skipped, ' + (q.hidden || 0) + ' taken down' + (q.failed ? ', ' + q.failed + ' couldn’t be read' : '') + '.';
       drawReports(); drawTable();
     });
   }
