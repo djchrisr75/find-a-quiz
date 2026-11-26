@@ -25,6 +25,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';           // optional: email people their "manage" link
 const MAIL_FROM = process.env.MAIL_FROM || 'Find a Quiz <hello@find-a-quiz.com>';
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL || '';
+const MAIL_REPLY_TO = process.env.MAIL_REPLY_TO || CONTACT_EMAIL; // where replies to our emails go
 const NO_GEOCODE = process.env.NO_GEOCODE === '1';                  // for testing without internet
 
 if (!ADMIN_PASSWORD) console.warn('WARNING: ADMIN_PASSWORD is not set, so the admin page is switched off.');
@@ -419,8 +420,8 @@ async function sendManageEmail(l, token) {
 <p>${l.expiresAt ? `Your listing covers your quiz dates up to ${new Date(Date.parse(l.expiresAt) - 30 * 3600_000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}. You can add more dates from your edit link.` : ''}</p><p>Thanks,<br>Find a Quiz</p>`;
   await fetch('https://api.resend.com/emails', {
     method: 'POST', headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: MAIL_FROM, to: [l.contact.email], subject: `Your quiz is live: ${l.title}`, html: body }), signal: AbortSignal.timeout(10000),
-  });
+    body: JSON.stringify(Object.assign({ from: MAIL_FROM, to: [l.contact.email], subject: `Your quiz is live: ${l.title}`, html: body }, MAIL_REPLY_TO ? { reply_to: MAIL_REPLY_TO } : {})), signal: AbortSignal.timeout(10000),
+  }).then(async (r) => { if (!r.ok) console.error('email not sent:', r.status, (await r.text()).slice(0, 300)); });
 }
 
 // ---- Admin log-in (a cookie that lasts 30 days) -------------------------------------------------------
