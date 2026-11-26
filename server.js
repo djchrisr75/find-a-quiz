@@ -47,6 +47,15 @@ db.settings = Object.assign({}, DEFAULT_SETTINGS, db.settings);
 delete db.settings.listingDays; // (listings used to be paid by the year; now it's per quiz date)
 fs.mkdirSync(PHOTO_DIR, { recursive: true });
 if (!db.seeded) { for (const l of seedListings()) db.listings[l.id] = l; db.seeded = new Date().toISOString(); save(); }
+// One-off fixes to listings that were already saved before a change
+db.migrations = db.migrations || {};
+if (!db.migrations.wallHeath1stMonday) {
+  // Hickory's Wall Heath moved from the 2nd Monday to the 1st Monday of each month (Nov 2026)
+  for (const l of Object.values(db.listings)) {
+    if (/Hickory.s Wall Heath/i.test(l.title || '') && l.schedule && l.schedule.repeat === 'monthly') l.schedule.weeks = [1];
+  }
+  db.migrations.wallHeath1stMonday = new Date().toISOString(); save();
+}
 setImmediate(() => addBqlLogo());
 
 let saveTimer = null;
