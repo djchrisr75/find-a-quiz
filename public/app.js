@@ -140,7 +140,7 @@
   }
   function setCenter(lat, lng, label, fromUser, area) {
     state.center = { lat: +lat, lng: +lng }; state.label = label;
-    state.areaKm = area > 15 ? area : 0; // a whole state/county/country: search all of it, not just around its middle
+    state.areaKm = area > 40 ? area : 0; // a whole state/county/country: search all of it, not just around its middle
     if (lmap) { if (here) lmap.removeLayer(here); here = LL.marker([lat, lng], { icon: hereIcon, interactive: false, keyboard: false }).addTo(lmap); }
     say('');
     try {
