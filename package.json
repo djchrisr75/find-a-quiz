@@ -1,0 +1,15 @@
+{
+  "name": "find-a-quiz",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Find a Quiz (find-a-quiz.com): find quiz nights near you, anywhere in the world. Hosts list quizzes for £2 via SumUp.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {}
+}

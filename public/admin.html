@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin | Find a Quiz</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<!--HEADER-->
+<main class="admin">
+  <h1>Admin</h1>
+  <form id="login" class="card-page narrow" hidden>
+    <label class="f">Admin password<input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="btn" type="submit">Log in</button> <span class="form-err" id="loginErr"></span>
+  </form>
+
+  <div id="panel" hidden>
+    <p><a class="btn small" href="/list?admin=1">＋ Add a quiz (free)</a> <button class="btn small ghost" type="button" id="logout">Log out</button></p>
+    <div class="stats" id="stats"></div>
+    <p id="warn" class="unverified" hidden></p>
+
+    <h2>Settings</h2>
+    <form id="settings" class="card-page" style="margin-top:8px">
+      <div class="row">
+        <label class="f">Price per quiz date (£)<input name="price" type="number" min="0" step="0.01"><small>A weekly quiz listed for 8 weeks pays 8 × this. 0 makes listing free</small></label>
+        <label class="f">Most dates paid for at once<input name="maxEvents" type="number" min="1" max="200"></label>
+        <label class="f">Photos per listing<input name="maxPhotos" type="number" min="0" max="10"></label>
+        <label class="f">Biggest photo (KB)<input name="maxPhotoKB" type="number" min="50" max="2000"><small>Photos are shrunk on the lister’s phone to fit this</small></label>
+        <label class="f">Photo storage limit (MB)<input name="storageCapMB" type="number" min="10"><small>New photo uploads stop when all photos together reach this</small></label>
+      </div>
+      <label class="terms-check"><input type="checkbox" name="paymentsOn"> Taking new paid listings</label>
+      <label class="f">Message across the top of every page <small>Leave empty for none</small><input name="notice" maxlength="200"></label>
+      <button class="btn" type="submit">Save settings</button> <span id="setMsg" class="hint" style="display:inline"></span>
+    </form>
+
+    <h2>SpeedQuizzing USA import</h2>
+    <div class="card-page" style="margin-top:8px"><p id="sqStatus" style="margin-top:0"></p>
+      <p class="hint">US SpeedQuizzing quizzes are copied from SpeedQuizzing’s public quiz finder once a week. Quizzes that disappear from it for 45 days are hidden. Ones a host has claimed are never changed.</p>
+      <button class="btn small" type="button" id="sqRun">Import now</button></div>
+
+    <h2>Reports <span class="muted" id="repCount"></span></h2>
+    <div id="reports"></div>
+
+    <h2>Listings</h2>
+    <p><input id="filter" class="pill" style="width:min(100%,360px)" placeholder="Search listings…" aria-label="Search listings">
+      <select id="show" class="pill" aria-label="Which listings"><option value="all">All</option><option value="owner">Listed or claimed by hosts</option><option value="seed">Found online (UK)</option><option value="speedquizzing">From SpeedQuizzing (USA)</option><option value="hidden">Hidden</option><option value="ended">Ended</option></select></p>
+    <div class="tbl-wrap"><table class="tbl" id="tbl"><thead><tr><th>Quiz</th><th>When</th><th>Status</th><th>Until</th><th>Contact</th><th></th></tr></thead><tbody></tbody></table></div>
+  </div>
+</main>
+<!--FOOTER-->
+<script src="/assets/admin.js"></script>
+</body>
+</html>
