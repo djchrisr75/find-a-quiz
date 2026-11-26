@@ -230,3 +230,10 @@ table.tbl { width: 100%; border-collapse: collapse; background: var(--paper); bo
 .tbl button:hover { background: var(--lilac); }
 .tbl .danger { color: var(--tomato-d); }
 .tbl-wrap { overflow-x: auto; }
+
+/* Town pages */
+.town h2 { font-size: 1.3rem; }
+.town-list { list-style: none; padding: 0; margin: 8px 0 18px; display: grid; gap: 8px; }
+.town-list li { background: var(--paper); border: 2px solid var(--ink); border-radius: 14px; padding: 10px 14px; }
+.town-list a { text-decoration: none; }
+.near { line-height: 2; }

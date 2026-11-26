@@ -445,7 +445,7 @@ function header() {
 <nav><a href="/">Find a quiz</a><a class="btn small" href="/list">List your quiz · ${esc(priceText())}</a></nav></header>`;
 }
 const footer = () => `<footer class="foot"><div><a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="28" height="28"><span>find<b>a</b>quiz</span></a>
-<p>Quiz nights near you, wherever you are.</p></div><nav><a href="/list">List your quiz</a><a href="/about">About</a><a href="/terms">Terms &amp; privacy</a></nav></footer>`;
+<p>Quiz nights near you, wherever you are.</p></div><nav><a href="/quiz-nights">Quiz nights by town</a><a href="/list">List your quiz</a><a href="/about">About</a><a href="/terms">Terms &amp; privacy</a></nav></footer>`;
 const priceText = () => (db.settings.price > 0 ? `£${Number(db.settings.price) % 1 ? Number(db.settings.price).toFixed(2) : Number(db.settings.price)} a night` : 'free');
 
 function quizPage(l) {
@@ -491,7 +491,7 @@ function quizPage(l) {
   ${ended}${gallery}
   <div class="quiz-grid">
     <article>
-      <p class="crumbs"><a href="/">Find a quiz</a>${q.town ? ` › <a href="/?q=${encodeURIComponent(q.town)}">${esc(q.town)}</a>` : ''}</p>
+      <p class="crumbs"><a href="/">Find a quiz</a>${q.town && !q.online ? ` › <a href="/quiz-nights/${townKey(l)}">Quiz nights in ${esc(townName(l))}</a>` : ''}</p>
       <h1>${esc(q.title)} ${q.verified ? '<span class="badge ok" title="Confirmed by the venue or quiz host">✓ Confirmed</span>' : ''}</h1>
       <p class="where">${q.online ? 'Online quiz' : `<b>${esc(q.venue)}</b>${q.address ? ', ' + esc(q.address) : ''}${q.town ? ', ' + esc(q.town) : ''}${q.postcode ? ' ' + esc(q.postcode) : ''}${q.country && q.country !== 'GB' ? ', ' + esc(L.countryName(q.country)) : ''}`}</p>
       <p class="when-big">${esc(q.when)}</p>
@@ -539,8 +539,59 @@ function donePage(ref) {
 <p class="muted">Tip: share your listing page on social media so people can find your quiz.</p></main>${footer()}</body></html>`;
 }
 
+// ---- Town pages: "Quiz nights in Birmingham" (what people type into Google) ---------------------------
+const townKey = (l) => slugify([l.town, l.country === 'US' ? l.region : '', l.country].filter(Boolean).join(' '));
+const townName = (l) => [l.town, l.country === 'US' ? l.region : ''].filter(Boolean).join(', ');
+let townCache = { at: 0, towns: null };
+function towns() {
+  if (townCache.towns && Date.now() - townCache.at < 5 * 60_000) return townCache.towns;
+  const today = londonToday(), map = new Map();
+  for (const l of listingsArr()) {
+    if (!isLive(l, today) || l.online || !l.town) continue;
+    const k = townKey(l);
+    if (!map.has(k)) map.set(k, { key: k, name: townName(l), country: l.country, lat: 0, lng: 0, list: [] });
+    map.get(k).list.push(l);
+  }
+  for (const t of map.values()) { t.lat = t.list.reduce((n, l) => n + l.lat, 0) / t.list.length; t.lng = t.list.reduce((n, l) => n + l.lng, 0) / t.list.length; }
+  townCache = { at: Date.now(), towns: map };
+  return map;
+}
+const countryLabel = (cc) => (cc === 'GB' ? 'United Kingdom' : cc === 'US' ? 'United States' : L.countryName(cc));
+function townPage(t) {
+  const today = londonToday();
+  const near = [...towns().values()].filter((x) => x.key !== t.key && x.country === t.country).map((x) => ({ x, d: km(t.lat, t.lng, x.lat, x.lng) })).filter((o) => o.d < 25).sort((a, b) => a.d - b.d).slice(0, 12);
+  const list = t.list.map((l) => publicListing(l)).sort((a, b) => String(a.next || '9').localeCompare(String(b.next || '9')));
+  const byDay = [1, 2, 3, 4, 5, 6, 0].map((d) => ({ d, qs: list.filter((q) => q.schedule && (q.schedule.days ? q.schedule.days.includes(d) : S.parse(q.schedule.date) && S.parse(q.schedule.date).getUTCDay() === d)) })).filter((g) => g.qs.length);
+  const tonight = list.filter((q) => q.next === today);
+  const item = (q) => `<li><a href="${q.url}"><b>${esc(q.title)}</b></a><br><span class="muted">${esc(q.venue)} · ${esc(q.when)}${q.feeText ? ' · ' + esc(q.feeText) : ''}${q.prizes ? ' · Prizes: ' + esc(q.prizes) : ''}</span></li>`;
+  const title = `Quiz Nights in ${t.name} | ${t.list.length} Pub Quiz${t.list.length === 1 ? '' : 'zes'} This Week | Find a Quiz`;
+  const desc = `Find a pub quiz or quiz night in ${t.name}: ${t.list.length} weekly quiz${t.list.length === 1 ? '' : 'zes'}${tonight.length ? `, ${tonight.length} on tonight` : ''}, with days, start times, entry fees and prizes.`;
+  const ld = { '@context': 'https://schema.org', '@type': 'ItemList', name: `Quiz nights in ${t.name}`, itemListElement: list.map((q, i) => ({ '@type': 'ListItem', position: i + 1, url: SITE_URL + q.url, name: q.title })) };
+  return SHELL_HEAD(title, desc, `<link rel="canonical" href="${SITE_URL}/quiz-nights/${t.key}"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:image" content="${SITE_URL}/assets/og.png"><script type="application/ld+json">${JSON.stringify(ld).replace(/</g, '\\u003c')}</script>`) + header() + `
+<main class="narrow prose town">
+  <p class="crumbs"><a href="/quiz-nights">Quiz nights by town</a> › ${esc(countryLabel(t.country))}</p>
+  <h1>Quiz nights in ${esc(t.name)}</h1>
+  <p>There ${t.list.length === 1 ? 'is <b>1</b> regular quiz' : `are <b>${t.list.length}</b> regular quizzes`} in and around ${esc(t.name)}${tonight.length ? `, and <b>${tonight.length}</b> ${tonight.length === 1 ? 'is' : 'are'} on tonight` : ''}. Pick a night, check the start time and entry fee, and get your team together.</p>
+  <p><a class="btn" href="/?q=${encodeURIComponent(t.name)}">See them on the map</a></p>
+  ${tonight.length ? `<h2>On tonight</h2><ul class="town-list">${tonight.map(item).join('')}</ul>` : ''}
+  ${byDay.map((g) => `<h2>${S.DAYS[g.d]} quizzes</h2><ul class="town-list">${g.qs.map(item).join('')}</ul>`).join('')}
+  ${near.length ? `<h2>Quiz nights near ${esc(t.name)}</h2><p class="near">${near.map((o) => `<a href="/quiz-nights/${o.x.key}">${esc(o.x.name)}</a>`).join(' · ')}</p>` : ''}
+  <div class="keep"><h2 style="margin-top:0">Run a quiz in ${esc(t.name)}?</h2><p>List it on Find a Quiz for ${esc(priceText())} so local players and visitors can find it.</p><p><a class="btn small" href="/list">List your quiz</a></p></div>
+</main>${footer()}</body></html>`;
+}
+function townsIndexPage() {
+  const all = [...towns().values()].sort((a, b) => a.name.localeCompare(b.name));
+  const byCountry = {};
+  for (const t of all) (byCountry[t.country] = byCountry[t.country] || []).push(t);
+  const order = Object.keys(byCountry).sort((a, b) => (a === 'GB' ? -1 : b === 'GB' ? 1 : a === 'US' ? -1 : b === 'US' ? 1 : countryLabel(a).localeCompare(countryLabel(b))));
+  return SHELL_HEAD('Quiz Nights by Town | Pub Quizzes Near You | Find a Quiz', 'Find pub quizzes and quiz nights in towns and cities across the UK, Ireland, Europe and the USA.', `<link rel="canonical" href="${SITE_URL}/quiz-nights">`) + header() + `
+<main class="narrow prose town"><h1>Quiz nights by town</h1><p>Every town with a quiz listed on Find a Quiz. Or <a href="/">search near you</a>.</p>
+${order.map((cc) => `<h2>${esc(countryLabel(cc))}</h2><p class="near">${byCountry[cc].map((t) => `<a href="/quiz-nights/${t.key}">${esc(t.name)}</a> <span class="muted">(${t.list.length})</span>`).join(' · ')}</p>`).join('')}
+</main>${footer()}</body></html>`;
+}
+
 function sitemap() {
-  const urls = [`${SITE_URL}/`, `${SITE_URL}/list`, `${SITE_URL}/about`].concat(listingsArr().filter((l) => isLive(l)).map((l) => `${SITE_URL}/quiz/${l.slug}`));
+  const urls = [`${SITE_URL}/`, `${SITE_URL}/list`, `${SITE_URL}/about`, `${SITE_URL}/quiz-nights`].concat([...towns().keys()].map((k) => `${SITE_URL}/quiz-nights/${k}`)).concat(listingsArr().filter((l) => isLive(l)).map((l) => `${SITE_URL}/quiz/${l.slug}`));
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((u) => `<url><loc>${esc(u)}</loc></url>`).join('')}</urlset>`;
 }
 
@@ -557,11 +608,18 @@ function pageWithSettings(file, extra = {}) {
   const st = db.settings;
   const data = JSON.stringify(Object.assign({ price: st.price, priceText: priceText(), maxPhotos: st.maxPhotos, maxPhotoKB: st.maxPhotoKB, maxEvents: st.maxEvents, paymentsOn: st.paymentsOn, notice: st.notice, payReady: !!(SUMUP_API_KEY && SUMUP_MERCHANT_CODE) }, extra))
     .replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-  return page.replace('</head>', `<script>window.FAQ=${data}</script>\n</head>`).replace('<!--HEADER-->', header()).replace('<!--FOOTER-->', footer());
+  let html = page.replace('</head>', `<script>window.FAQ=${data}</script>\n</head>`).replace('<!--HEADER-->', header()).replace('<!--FOOTER-->', footer());
+  if (html.includes('<!--TOWNS-->')) {
+    const top = [...towns().values()].sort((a, b) => b.list.length - a.list.length).slice(0, 48).sort((a, b) => a.name.localeCompare(b.name));
+    html = html.replace('<!--TOWNS-->', `<section class="band town"><h2>Quiz nights by town</h2><p class="near">${top.map((t) => `<a href="/quiz-nights/${t.key}">${esc(t.name)}</a>`).join(' · ')} · <a href="/quiz-nights"><b>All towns →</b></a></p></section>`);
+  }
+  return html;
 }
 
 // ---- The website ---------------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
+  // The temporary Railway address shows the same pages as www.find-a-quiz.com: tell search engines to ignore it
+  if (/\.up\.railway\.app$/i.test(String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim().replace(/:\d+$/, ''))) res.setHeader('X-Robots-Tag', 'noindex');
   try {
     const url = new URL(req.url, SITE_URL);
     const p = url.pathname.replace(/\/+$/, '') || '/';
@@ -586,8 +644,16 @@ const server = http.createServer(async (req, res) => {
     if (GET && (p === '/favicon.ico')) return sendStatic(res, 'icon.svg');
     if (GET && p === '/health') return json(res, 200, { ok: true });
 
-    // A quiz's own page
+    // Town pages
+    if (GET && p === '/quiz-nights') return htmlRes(res, 200, townsIndexPage());
     let m;
+    if (GET && (m = p.match(/^\/quiz-nights\/([a-z0-9-]{1,90})$/))) {
+      const t = towns().get(m[1]);
+      if (!t) return htmlRes(res, 404, SHELL_HEAD('Not found | Find a Quiz', '') + header() + `<main class="narrow card-page"><h1>No quizzes listed here yet</h1><p><a class="btn" href="/quiz-nights">See all towns</a></p></main>${footer()}</body></html>`);
+      return htmlRes(res, 200, townPage(t));
+    }
+
+    // A quiz's own page
     if (GET && (m = p.match(/^\/quiz\/([a-z0-9-]{1,90})$/))) {
       const l = listingsArr().find((x) => x.slug === m[1]);
       if (!l || l.status === 'hidden' || l.status === 'deleted') return htmlRes(res, 404, SHELL_HEAD('Quiz not found | Find a Quiz', '') + header() + `<main class="narrow card-page"><h1>Quiz not found</h1><p>This listing may have been removed.</p><p><a class="btn" href="/">Find a quiz near you</a></p></main>${footer()}</body></html>`);
