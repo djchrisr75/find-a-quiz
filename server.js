@@ -46,6 +46,7 @@ db.settings = Object.assign({}, DEFAULT_SETTINGS, db.settings);
 delete db.settings.listingDays; // (listings used to be paid by the year; now it's per quiz date)
 fs.mkdirSync(PHOTO_DIR, { recursive: true });
 if (!db.seeded) { for (const l of seedListings()) db.listings[l.id] = l; db.seeded = new Date().toISOString(); save(); }
+setImmediate(() => addBqlLogo());
 
 let saveTimer = null;
 function save() {
@@ -198,20 +199,32 @@ function photoKind(buf) {
 const storageBytes = () => Object.values(db.photos).reduce((n, p) => n + (p.size || 0), 0);
 const photoUrl = (id) => (db.photos[id] ? `/photos/${id}.${db.photos[id].ext}` : '');
 function deletePhoto(id) {
-  const p = db.photos[id]; if (!p) return;
+  const p = db.photos[id]; if (!p || p.shared) return; // shared pictures (like the Big Quiz Live logo) are never deleted
   try { fs.unlinkSync(path.join(PHOTO_DIR, `${id}.${p.ext}`)); } catch (e) { /* already gone */ }
   delete db.photos[id];
 }
 // Photo ids a form sent, kept only if they exist and aren't someone else's
 function claimPhotos(ids, listingId) {
   const max = db.settings.maxPhotos;
-  return (Array.isArray(ids) ? ids : []).filter((id) => typeof id === 'string' && db.photos[id] && (!db.photos[id].listing || db.photos[id].listing === listingId)).slice(0, max);
+  return (Array.isArray(ids) ? ids : []).filter((id) => typeof id === 'string' && db.photos[id] && (db.photos[id].shared || !db.photos[id].listing || db.photos[id].listing === listingId)).slice(0, max);
 }
 function attachPhotos(listing, ids) {
   const keep = new Set(ids);
   for (const old of listing.photos || []) if (!keep.has(old)) deletePhoto(old);
-  for (const id of ids) if (db.photos[id]) db.photos[id].listing = listing.id;
+  for (const id of ids) if (db.photos[id] && !db.photos[id].shared) db.photos[id].listing = listing.id;
   listing.photos = ids;
+}
+
+// The Big Quiz Live logo goes on all of our own listings (one shared copy, added once)
+function addBqlLogo() {
+  const id = 'bqllogo-v1', src = path.join(__dirname, 'lib', 'assets', 'bql-logo.jpg');
+  if (db.bqlLogoAdded === id || !fs.existsSync(src)) return;
+  fs.copyFileSync(src, path.join(PHOTO_DIR, `${id}.jpg`));
+  db.photos[id] = { ext: 'jpg', size: fs.statSync(src).size, at: nowIso(), listing: 'shared', shared: true };
+  for (const l of Object.values(db.listings)) {
+    if (l.host === 'The Big Quiz Live' && l.status !== 'deleted' && !(l.photos || []).includes(id)) l.photos = [id].concat(l.photos || []).slice(0, Math.max(db.settings.maxPhotos, 1));
+  }
+  db.bqlLogoAdded = id; save();
 }
 
 // ---- Listings -----------------------------------------------------------------------------------
