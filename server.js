@@ -617,13 +617,14 @@ const server = http.createServer(async (req, res) => {
       const lat = Number(url.searchParams.get('lat')), lng = Number(url.searchParams.get('lng'));
       const radius = Math.min(Math.max(Number(url.searchParams.get('km')) || 40, 1), 1500);
       const today = londonToday();
-      let out = listingsArr().filter((l) => isLive(l, today)).map((l) => publicListing(l));
+      const cc = (url.searchParams.get('country') || '').toUpperCase();
+      let out = listingsArr().filter((l) => isLive(l, today) && (!cc || l.country === cc || (cc === 'GB' && ['JE', 'GG', 'IM'].includes(l.country)))).map((l) => publicListing(l));
       if (Number.isFinite(lat) && Number.isFinite(lng) && url.searchParams.get('lat') !== null) {
         out = out.map((q) => Object.assign(q, { km: q.lat != null ? Math.round(km(lat, lng, q.lat, q.lng) * 10) / 10 : null }))
           .filter((q) => q.online || (q.km != null && q.km <= radius))
           .sort((a, b) => (a.online - b.online) || (a.km - b.km));
       } else out.sort((a, b) => String(a.next || '9').localeCompare(String(b.next || '9')) || String(a.schedule.time || '99').localeCompare(String(b.schedule.time || '99')));
-      return json(res, 200, { quizzes: out.slice(0, 600), total: out.length, today });
+      return json(res, 200, { quizzes: out.slice(0, url.searchParams.get('lat') !== null ? 2000 : 400), total: out.length, today });
     }
     if (GET && (m = p.match(/^\/api\/quiz\/([A-Za-z0-9_-]{3,40})$/))) {
       const l = db.listings[m[1]];
@@ -834,10 +835,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// ---- SpeedQuizzing quiz nights in the USA (see lib/speedquizzing.js) ---------------------------------
+// ---- SpeedQuizzing quiz nights in the USA and Europe (see lib/speedquizzing.js) ---------------------------------
 function sqUpsert(data, sqId) {
   const id = 'sq' + sqId, ex = db.listings[id];
   if (ex && (ex.manageHash || ex.source !== 'speedquizzing' || ex.status === 'deleted')) { ex.sqSeen = nowIso(); return 'skipped'; } // claimed or removed: leave alone
+  // Already listed some other way (our own quizzes, the ones found online, or a host's own listing): don't list it twice
+  if (!ex) {
+    const day = data.schedule.days[0];
+    const dup = listingsArr().find((l) => l.source !== 'speedquizzing' && l.status !== 'deleted' && l.lat != null && !l.online &&
+      km(l.lat, l.lng, data.lat, data.lng) < 0.4 && (!l.schedule.days || l.schedule.days.includes(day)));
+    if (dup) return 'duplicate';
+  }
   const l = ex || { id, createdAt: nowIso(), status: 'active', source: 'speedquizzing', verified: false, featured: false, paidAt: null, expiresAt: null,
     online: false, onlineLink: '', prizeTags: [], features: [], booking: null, website: '', facebook: '', phone: '', photos: [], contact: null, manageHash: null };
   Object.assign(l, data, { updatedAt: nowIso(), sqId: String(sqId), sqSeen: nowIso(), geo: 'sq', lastChecked: londonToday() });
@@ -859,12 +867,14 @@ let sqRunning = false;
 async function runSqSync(why) {
   if (sqRunning) return;
   sqRunning = true;
-  try { const r = await sq.syncUSA({ upsert: sqUpsert, markUnseen: sqMarkUnseen }); db.sqSync = Object.assign({ at: nowIso(), why }, r); console.log('SpeedQuizzing USA import:', JSON.stringify(db.sqSync)); }
-  catch (e) { db.sqSync = { at: nowIso(), why, error: e.message }; console.error('SpeedQuizzing USA import failed:', e.message); }
+  try {
+    const r = await sq.syncAll({ upsert: sqUpsert, markUnseen: sqMarkUnseen, knownCountry: (id) => (db.listings['sq' + id] || {}).country || '' });
+    db.sqSync = Object.assign({ at: nowIso(), why }, r); console.log('SpeedQuizzing import:', JSON.stringify(db.sqSync));
+  } catch (e) { db.sqSync = { at: nowIso(), why, error: e.message }; console.error('SpeedQuizzing import failed:', e.message); }
   finally { sqRunning = false; save(); }
 }
 const SQ_ON = process.env.SQ_SYNC !== '0' && !NO_GEOCODE;
-function sqDue() { return SQ_ON && (!db.sqSync || Date.now() - Date.parse(db.sqSync.at) > 6 * 86400_000); }
+function sqDue() { return SQ_ON && (!db.sqSync || db.sqSync.europe == null || Date.now() - Date.parse(db.sqSync.at) > 6 * 86400_000); }
 
 // ---- Housekeeping every few minutes ---------------------------------------------------------------
 async function sweep() {

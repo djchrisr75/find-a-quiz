@@ -7,7 +7,10 @@
   var state = { center: null, label: '', all: [], shown: 0, filters: {} };
   // Before anyone searches, show quizzes in the visitor's own country (guessed from their time zone)
   var TZ = ''; try { TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { /* old browser */ }
-  var HOME = /^Europe\/(London|Belfast|Jersey|Guernsey|Isle_of_Man)$/.test(TZ) ? { code: 'GB', name: 'the UK' } : /^(America\/(New_York|Chicago|Denver|Phoenix|Los_Angeles|Anchorage|Detroit|Boise|Indiana|Kentucky|North_Dakota|Menominee|Juneau|Sitka|Nome|Adak|Metlakatla|Yakutat)|Pacific\/Honolulu)/.test(TZ) ? { code: 'US', name: 'the USA' } : null;
+  var TZC = { 'Europe/London': 'GB', 'Europe/Belfast': 'GB', 'Europe/Isle_of_Man': 'GB', 'Europe/Jersey': 'GB', 'Europe/Guernsey': 'GB', 'Europe/Dublin': 'IE', 'Europe/Madrid': 'ES', 'Atlantic/Canary': 'ES',
+    'Europe/Lisbon': 'PT', 'Europe/Gibraltar': 'GI', 'Asia/Nicosia': 'CY', 'Europe/Nicosia': 'CY', 'Europe/Bratislava': 'SK', 'Europe/Prague': 'CZ', 'Europe/Zurich': 'CH', 'Europe/Berlin': 'DE', 'Europe/Paris': 'FR', 'Europe/Amsterdam': 'NL', 'Europe/Brussels': 'BE', 'Europe/Malta': 'MT', 'Pacific/Honolulu': 'US' };
+  var code = TZC[TZ] || (/^America\/(New_York|Chicago|Denver|Phoenix|Los_Angeles|Anchorage|Detroit|Boise|Indiana|Kentucky|North_Dakota|Menominee|Juneau|Sitka|Nome|Adak|Metlakatla|Yakutat)/.test(TZ) ? 'US' : '');
+  var HOME = code ? { code: code, name: code === 'GB' ? 'the UK' : code === 'US' ? 'the USA' : L.countryName(code) } : null;
   state.region = HOME;
   var PAGE = 30;
 
@@ -45,7 +48,7 @@
   // ---- Filters ----
   function passes(q) {
     var f = state.filters, s = q.schedule || {}, t = today();
-    if (!state.center && state.region && q.country !== state.region.code) return false;
+    if (!state.center && state.region && q.country !== state.region.code && !(state.region.code === 'GB' && ['JE', 'GG', 'IM'].indexOf(q.country) >= 0)) return false;
     var day = $('day').value;
     if (day === 'tonight' && !S.matches(s, S.parse(t))) return false;
     if (day === 'tomorrow' && !S.matches(s, new Date(S.parse(t).getTime() + 86400000))) return false;
@@ -124,17 +127,17 @@
 
   // ---- Loading quizzes ----
   function load() {
-    var u = '/api/quizzes';
+    var u = '/api/quizzes' + (!state.center && state.region ? '?country=' + state.region.code : '');
     if (state.center) u += '?lat=' + state.center.lat + '&lng=' + state.center.lng + '&km=' + Math.round(Math.max(Number($('radius').value) * MILE, state.areaKm || 0));
     $('count').textContent = 'Loading quizzes…';
     return fetch(u).then(function (r) { return r.json(); }).then(function (j) {
-      state.all = j.quizzes || [];
+      state.all = j.quizzes || []; state.total = j.total || state.all.length;
       if (!state.center && !state.all.length) $('count').textContent = 'No quizzes listed yet';
       render();
       if (!state.center) {
-        $('count').innerHTML = state.items.length + ' quizzes in ' + (state.region ? state.region.name + ' · <a href="#" id="everywhere">show everywhere</a>' : 'the world') + ' · search to find ones near you';
+        $('count').innerHTML = state.total + ' quizzes in ' + (state.region ? esc(state.region.name) + ' · <a href="#" id="everywhere">show everywhere</a>' : 'the world') + ' · search to find ones near you';
         var ev = document.getElementById('everywhere');
-        if (ev) ev.addEventListener('click', function (e) { e.preventDefault(); state.region = null; render(); $('count').textContent = state.items.length + ' quizzes worldwide · search to find ones near you'; });
+        if (ev) ev.addEventListener('click', function (e) { e.preventDefault(); state.region = null; load(); });
       }
     }).catch(function () { $('count').textContent = 'Couldn’t load quizzes. Check your connection and try again.'; });
   }

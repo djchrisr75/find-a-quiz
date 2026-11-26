@@ -24,7 +24,7 @@
       data = j; $('login').hidden = true; $('panel').hidden = false;
       var c = j.counts, st = j.settings;
       $('stats').innerHTML = [
-        ['Live listings', c.live], ['From hosts', c.owner], ['Found online', c.found], ['SpeedQuizzing USA', c.sq], ['Sales', j.sales], ['Takings', '£' + j.takings.toFixed(2)],
+        ['Live listings', c.live], ['From hosts', c.owner], ['Found online', c.found], ['From SpeedQuizzing', c.sq], ['Sales', j.sales], ['Takings', '£' + j.takings.toFixed(2)],
         ['Photos', j.storage.photos + ' · ' + j.storage.usedMB + ' MB of ' + st.storageCapMB], ['Open reports', c.reports],
       ].map(function (x) { return '<div class="stat">' + esc(x[0]) + '<b>' + esc(x[1]) + '</b></div>'; }).join('');
       var w = [];
@@ -72,7 +72,7 @@
     $('tbl').querySelector('tbody').innerHTML = rows.map(function (l) {
       var status = l.status === 'hidden' ? 'Hidden' : l.live ? 'Live' : 'Ended';
       var b = function (a, t, cls) { return '<button data-id="' + esc(l.id) + '" data-a="' + a + '"' + (cls ? ' class="' + cls + '"' : '') + '>' + t + '</button>'; };
-      return '<tr><td><a href="/quiz/' + esc(l.slug) + '" target="_blank">' + esc(l.title) + '</a><br><span class="muted">' + esc(l.town) + ' · ' + (l.source === 'seed' ? 'found online' : l.source === 'speedquizzing' ? 'SpeedQuizzing USA' : l.source) + (l.verified ? ' · ✓' : '') + (l.photos ? ' · ' + l.photos + ' 📷' : '') + '</span></td>' +
+      return '<tr><td><a href="/quiz/' + esc(l.slug) + '" target="_blank">' + esc(l.title) + '</a><br><span class="muted">' + esc(l.town) + ' · ' + (l.source === 'seed' ? 'found online' : l.source === 'speedquizzing' ? 'SpeedQuizzing' : l.source) + (l.verified ? ' · ✓' : '') + (l.photos ? ' · ' + l.photos + ' 📷' : '') + '</span></td>' +
         '<td>' + esc(l.when) + '</td><td>' + status + '</td><td>' + (l.expiresAt ? esc(new Date(l.expiresAt).toLocaleDateString('en-GB')) : '—') + '</td><td>' + (l.email ? '<a href="mailto:' + esc(l.email) + '">' + esc(l.email) + '</a>' : '') + '</td>' +
         '<td>' + b('editlink', 'Edit') + (l.status === 'hidden' ? b('show', 'Show') : b('hide', 'Hide')) + (l.verified ? b('unverify', 'Unconfirm') : b('verify', 'Confirm')) + (l.expiresAt ? b('extend', '+13 dates') : '') + b('delete', 'Delete', 'danger') + '</td></tr>';
     }).join('') || '<tr><td colspan="6" class="muted">No listings.</td></tr>';

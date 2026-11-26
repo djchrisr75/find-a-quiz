@@ -30,6 +30,7 @@ const mock = http.createServer((req, res) => {
       const file = path.join(__dirname, 'test-fixtures', f);
       return new Response(fs.existsSync(file) ? fs.readFileSync(file) : 'not found', { status: fs.existsSync(file) ? 200 : 404 });
     }
+    if (u.startsWith('https://nominatim.openstreetmap.org/reverse')) return new Response(JSON.stringify({ address: { country_code: 'es' } }));
     return realFetch(url, opts);
   };
   const { server, db, runSqSync } = require('./server');
@@ -128,14 +129,20 @@ const mock = http.createServer((req, res) => {
   // SpeedQuizzing USA import: US events added, the London one left out, claimed ones left alone
   await runSqSync('test');
   const a = db.listings.sq611, b = db.listings.sq3069;
-  assert.ok(a && b && !db.listings.sq10410, 'US events imported, UK one skipped');
+  assert.ok(a && b, 'US events imported');
   assert.ok(a.country === 'US' && a.region === 'MA' && a.postcode === '01085' && a.schedule.days[0] === 4 && a.schedule.time === '20:00' && a.fee.free && a.ages === '21' && a.teamMax === 7 && a.host === 'Bobby Roast Beef');
   assert.ok(b.region === 'FL' && b.schedule.days[0] === 2 && b.prizes === 'gift cards for top teams');
-  assert.ok(db.sqSync.found === 2 && db.sqSync.added === 2);
+  const ie = db.listings.sq13391, je = db.listings.sq5999, es = db.listings.sq10330;
+  assert.ok(ie && ie.country === 'IE' && ie.postcode === 'H91 A588' && ie.fee.currency === 'EUR' && ie.fee.amount === 5, 'Galway: Ireland, €5');
+  assert.ok(je && je.country === 'JE' && je.fee.currency === 'GBP' && je.fee.amount === 3 && je.prizes.includes('Roll-Over'), 'Jersey, £3');
+  assert.ok(es && es.country === 'ES' && es.fee.currency === 'EUR' && es.fee.amount === 4 && es.town === 'Playa Flamenca', 'Spain (looked up), 4€');
+  assert.ok(!db.listings.sq99001 && db.sqSync.duplicate === 1, 'Actress and Bishop already listed, not added twice');
+  assert.ok(db.sqSync.added === 5 && db.sqSync.europe === 3 && db.sqSync.usa === 2, JSON.stringify(db.sqSync));
+  r = await call('GET', '/api/quizzes?country=IE'); assert.ok(r.j.quizzes.length === 1 && r.j.quizzes[0].feeText === '€5 per person');
   r = await call('GET', '/api/quizzes?lat=42.12&lng=-72.75&km=20'); assert.ok(r.j.quizzes.some((q) => q.id === 'sq611'), 'found near Westfield, MA');
   r = await call('GET', `/quiz/${a.slug}`); assert.ok(r.t.includes('SpeedQuizzing’s quiz finder') && r.t.includes('Claim it'));
   a.title = 'Changed by hand'; await runSqSync('test'); assert.strictEqual(db.listings.sq611.title, "Thursday @ 7B's Bar & Grill", 'unclaimed ones are refreshed');
-  console.log('✓ SpeedQuizzing USA import: 2 US events added (MA, FL), UK event left out, details read correctly');
+  console.log('✓ SpeedQuizzing import: USA (MA, FL) and Europe (Galway €5, Jersey £3, Spain €4 via map look-up); duplicate of an existing quiz skipped');
 
   console.log('\nAll good.');
   server.close(); mock.close(); fs.rmSync(tmp, { recursive: true, force: true });
