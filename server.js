@@ -286,7 +286,7 @@ async function getJson(url, opts = {}) {
 }
 async function geocode(q, country) {
   q = line(q, 120); if (!q) return [];
-  const key = (country || '') + '|' + q.toLowerCase();
+  const key = 'v2|' + (country || '') + '|' + q.toLowerCase();
   if (db.geocache[key] && Date.now() - db.geocache[key].at < 30 * 86400_000) return db.geocache[key].r;
   if (NO_GEOCODE) return townFallback(q);
   let r = [];
@@ -319,14 +319,21 @@ async function nominatim(q, country) {
   if (CONTACT_EMAIL) u.searchParams.set('email', CONTACT_EMAIL);
   const j = await getJson(u.href, { headers: { 'User-Agent': `FindAQuiz/1.0 (${SITE_URL})`, 'Accept-Language': 'en-GB,en' }, signal: AbortSignal.timeout(12000) });
   return (j || []).map((x) => ({ name: x.display_name, lat: Number(x.lat), lng: Number(x.lon), country: x.address && x.address.country_code ? x.address.country_code.toUpperCase() : '',
+    areaKm: x.boundingbox ? areaKm(+x.boundingbox[0], +x.boundingbox[1], +x.boundingbox[2], +x.boundingbox[3]) : 0,
     postcode: (x.address && x.address.postcode) || '', town: x.address ? (x.address.city || x.address.town || x.address.village || x.address.suburb || '') : '' }));
+}
+// How far a big place (a state, county or country) stretches from its middle, so a search for "Florida" covers all of it
+function areaKm(south, north, west, east) {
+  if (![south, north, west, east].every(Number.isFinite)) return 0;
+  return Math.min(1500, Math.round(km(south, west, north, east) / 2));
 }
 // Photon: another free OpenStreetMap search, used if the first one is slow or down
 async function photon(q, country) {
   const j = await getJson(`https://photon.komoot.io/api/?limit=5&lang=en&q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(12000) });
   return (j.features || []).filter((f) => !country || (f.properties.countrycode || '').toUpperCase() === country).map((f) => {
     const p = f.properties, [lng, lat] = f.geometry.coordinates;
-    return { name: [p.name, p.city !== p.name ? p.city : '', p.state, p.country].filter(Boolean).join(', '), lat, lng, country: (p.countrycode || '').toUpperCase(), postcode: p.postcode || '', town: p.city || p.name || '' };
+    return { name: [p.name, p.city !== p.name ? p.city : '', p.state, p.country].filter(Boolean).join(', '), lat, lng, country: (p.countrycode || '').toUpperCase(), postcode: p.postcode || '', town: p.city || p.name || '',
+      areaKm: p.extent ? areaKm(p.extent[3], p.extent[1], p.extent[0], p.extent[2]) : 0 };
   });
 }
 // Last resort: a town (or town, state) that already has quizzes listed
@@ -608,7 +615,7 @@ const server = http.createServer(async (req, res) => {
     // ---- API: searching ----
     if (GET && p === '/api/quizzes') {
       const lat = Number(url.searchParams.get('lat')), lng = Number(url.searchParams.get('lng'));
-      const radius = Math.min(Math.max(Number(url.searchParams.get('km')) || 40, 1), 500);
+      const radius = Math.min(Math.max(Number(url.searchParams.get('km')) || 40, 1), 1500);
       const today = londonToday();
       let out = listingsArr().filter((l) => isLive(l, today)).map((l) => publicListing(l));
       if (Number.isFinite(lat) && Number.isFinite(lng) && url.searchParams.get('lat') !== null) {

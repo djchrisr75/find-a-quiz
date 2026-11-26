@@ -83,7 +83,7 @@
     state.items = items; state.shown = Math.min(PAGE, items.length);
     listEl.innerHTML = items.slice(0, state.shown).map(card).join('');
     $('more').hidden = items.length <= state.shown;
-    var where = state.center ? ' near ' + state.label : '';
+    var where = state.center ? (state.areaKm ? ' in ' : ' near ') + state.label : '';
     if (!items.length) {
       $('count').textContent = 'No quizzes found' + where;
       listEl.innerHTML = '<div class="empty"><h3>Nothing here yet</h3><p>' + (state.center ? 'Try a bigger distance or fewer filters. ' : 'Try fewer filters. ') + 'Know a quiz round here? Tell the host they can <a href="/list">list it for ' + esc(CFG.price > 0 ? '£' + Number(CFG.price).toFixed(2) : 'free') + '</a>.</p></div>';
@@ -106,7 +106,7 @@
       m.addTo(layer); markers[q.id] = m; pts.push([q.lat, q.lng]);
     });
     if (state.center) {
-      var r = Number($('radius').value) * MILE * 1000;
+      var r = Math.max(Number($('radius').value) * MILE, state.areaKm || 0) * 1000;
       var b = LL.latLng(state.center.lat, state.center.lng).toBounds(r * 2);
       if (pts.length) { var pb = LL.latLngBounds(pts); pb.extend([state.center.lat, state.center.lng]); lmap.fitBounds(pb.pad(0.15), { maxZoom: 14 }); }
       else lmap.fitBounds(b);
@@ -125,7 +125,7 @@
   // ---- Loading quizzes ----
   function load() {
     var u = '/api/quizzes';
-    if (state.center) u += '?lat=' + state.center.lat + '&lng=' + state.center.lng + '&km=' + Math.round(Number($('radius').value) * MILE);
+    if (state.center) u += '?lat=' + state.center.lat + '&lng=' + state.center.lng + '&km=' + Math.round(Math.max(Number($('radius').value) * MILE, state.areaKm || 0));
     $('count').textContent = 'Loading quizzes…';
     return fetch(u).then(function (r) { return r.json(); }).then(function (j) {
       state.all = j.quizzes || [];
@@ -138,8 +138,9 @@
       }
     }).catch(function () { $('count').textContent = 'Couldn’t load quizzes. Check your connection and try again.'; });
   }
-  function setCenter(lat, lng, label, fromUser) {
+  function setCenter(lat, lng, label, fromUser, area) {
     state.center = { lat: +lat, lng: +lng }; state.label = label;
+    state.areaKm = area > 15 ? area : 0; // a whole state/county/country: search all of it, not just around its middle
     if (lmap) { if (here) lmap.removeLayer(here); here = LL.marker([lat, lng], { icon: hereIcon, interactive: false, keyboard: false }).addTo(lmap); }
     say('');
     try {
@@ -158,7 +159,7 @@
       var b = e.target.closest('button'); if (!b) return;
       var r = results[+b.getAttribute('data-i')]; ul.hidden = true;
       var short = shortName(r);
-      $('q').value = short; setCenter(r.lat, r.lng, short);
+      $('q').value = short; setCenter(r.lat, r.lng, short, null, r.areaKm);
     };
   }
   function shortName(r) { return r.postcode && /^[A-Z]{1,2}\d/.test(r.name) ? r.name : String(r.name).split(',').slice(0, 2).join(',').trim(); }
@@ -172,7 +173,7 @@
       var rs = (j.results || []).filter(function (r) { return isFinite(r.lat) && isFinite(r.lng); });
       if (j.error) return say(j.error, true);
       if (!rs.length) return say('We couldn’t find “' + q + '”. Try a nearby town or a postcode.', true);
-      setCenter(rs[0].lat, rs[0].lng, shortName(rs[0]));
+      setCenter(rs[0].lat, rs[0].lng, shortName(rs[0]), null, rs[0].areaKm);
       if (rs.length > 1) say('Showing quizzes near ' + shortName(rs[0]) + '. Not the right place? Pick one from the list.'), showSuggest(rs);
     }).catch(function () { say('Search isn’t working right now. Please try again.', true); });
   });
