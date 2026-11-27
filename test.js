@@ -56,6 +56,16 @@ const mock = http.createServer((req, res) => {
   const seed = Object.values(db.listings).find((l) => l.source === 'seed');
   r = await call('GET', `/quiz/${seed.slug}`);
   assert.strictEqual(r.status, 200); assert.ok(r.t.includes('application/ld+json') && r.t.includes('Claim it'));
+  // Every Event field Google Search Console asks for is filled in
+  for (const l of Object.values(db.listings).filter((x) => !x.hidden).slice(0, 40)) {
+    const p = await call('GET', `/quiz/${l.slug}`), m = p.t.match(/<script type="application\/ld\+json">(.*?)<\/script>/);
+    if (!m) continue;
+    const ev = JSON.parse(m[1]);
+    for (const k of ['name', 'startDate', 'endDate', 'location', 'image', 'organizer', 'performer']) assert.ok(ev[k], `${l.slug}: Event.${k}`);
+    assert.ok(ev.image.length && ev.organizer.url && ev.performer.name, `${l.slug}: image / organizer.url / performer.name`);
+    assert.ok(ev.endDate > ev.startDate, `${l.slug}: endDate after startDate`);
+    if (ev.offers) assert.ok(ev.offers.url && ev.offers.priceCurrency, `${l.slug}: offers.url`);
+  }
   const own = Object.values(db.listings).find((l) => l.verified);
   r = await call('GET', `/quiz/${own.slug}`); assert.ok(r.t.includes('✓ Confirmed') && !r.t.includes('Claim it'));
   r = await call('GET', `/claim/${own.id}`); assert.strictEqual(r.status, 302, 'confirmed quizzes cannot be claimed');

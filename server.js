@@ -458,6 +458,39 @@ const footer = () => `<footer class="foot"><div><a class="brand" href="/"><img s
 <p>Quiz nights near you, wherever you are.</p></div><nav><a href="/quiz-nights">Quiz nights by town</a><a href="/list">List your quiz</a><a href="/about">About</a><a href="/terms">Terms &amp; privacy</a></nav></footer>`;
 const priceText = () => (db.settings.price > 0 ? `£${Number(db.settings.price) % 1 ? Number(db.settings.price).toFixed(2) : Number(db.settings.price)} a night` : 'free');
 
+// Google's Event rich results: name, startDate, location are required; endDate, image, offers (with url),
+// organizer (with url) and performer are "recommended" and Search Console flags them when missing.
+const QUIZ_HOURS = 2.5; // how long we assume a quiz runs when the host hasn't given a finish time
+function endDateFor(ymd, start, end) {
+  const [sh, sm] = start.split(':').map(Number);
+  let mins;
+  if (end) { const [eh, em] = end.split(':').map(Number); mins = eh * 60 + em - (sh * 60 + sm); if (mins <= 0) mins += 1440; }
+  else mins = QUIZ_HOURS * 60;
+  const d = new Date(Date.parse(`${ymd}T${start}:00Z`) + mins * 60000).toISOString();
+  return d.slice(0, 16); // local wall-clock time, same form as startDate
+}
+function eventLd(q, desc) {
+  const pageUrl = SITE_URL + q.url, start = q.schedule.time || '19:00';
+  const images = q.photos.length ? q.photos.map((p) => SITE_URL + p) : [`${SITE_URL}/assets/og.png`];
+  const orgName = q.host || q.venue || 'Find a Quiz';
+  const orgUrl = q.website || q.facebook || pageUrl;
+  const offerUrl = (q.booking && q.booking.link) || pageUrl;
+  const offer = q.fee && q.fee.free ? { price: 0, priceCurrency: q.fee.currency || sq.currencyFor(q.country) || 'GBP' }
+    : q.fee && q.fee.amount != null ? { price: q.fee.amount, priceCurrency: q.fee.currency || sq.currencyFor(q.country) || 'GBP' } : null;
+  return {
+    '@context': 'https://schema.org', '@type': 'Event', name: q.title, description: q.description || desc,
+    startDate: `${q.next}T${start}`, endDate: `${endDateFor(q.next, start, q.schedule.endTime)}`,
+    eventStatus: 'https://schema.org/EventScheduled',
+    eventAttendanceMode: q.online ? 'https://schema.org/OnlineEventAttendanceMode' : 'https://schema.org/OfflineEventAttendanceMode',
+    location: q.online ? { '@type': 'VirtualLocation', url: q.onlineLink || pageUrl } : { '@type': 'Place', name: q.venue, address: { '@type': 'PostalAddress', streetAddress: q.address, addressLocality: q.town, postalCode: q.postcode, addressCountry: q.country } },
+    image: images, url: pageUrl,
+    ...(offer ? { offers: { '@type': 'Offer', ...offer, url: offerUrl, availability: 'https://schema.org/InStock', validFrom: `${londonToday()}T00:00` } } : {}),
+    ...(q.fee && q.fee.free ? { isAccessibleForFree: true } : {}),
+    organizer: { '@type': 'Organization', name: orgName, url: orgUrl },
+    performer: q.host ? { '@type': 'Person', name: q.host } : { '@type': 'PerformingGroup', name: `${q.venue || 'Venue'} quiz host` },
+  };
+}
+
 function quizPage(l) {
   const q = publicListing(l, true), live = isLive(l);
   const place = q.online ? 'Online quiz' : [q.venue, q.town].filter(Boolean).join(', ');
@@ -465,15 +498,7 @@ function quizPage(l) {
   const og = `<meta property="og:title" content="${esc(q.title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:type" content="website">
 <meta property="og:url" content="${SITE_URL}${q.url}">${q.photos[0] ? `<meta property="og:image" content="${SITE_URL}${q.photos[0]}">` : `<meta property="og:image" content="${SITE_URL}/assets/og.png">`}
 <link rel="canonical" href="${SITE_URL}${q.url}">`;
-  const ld = q.next ? {
-    '@context': 'https://schema.org', '@type': 'Event', name: q.title, description: q.description || desc,
-    startDate: `${q.next}T${q.schedule.time || '19:00'}`, eventStatus: 'https://schema.org/EventScheduled',
-    eventAttendanceMode: q.online ? 'https://schema.org/OnlineEventAttendanceMode' : 'https://schema.org/OfflineEventAttendanceMode',
-    location: q.online ? { '@type': 'VirtualLocation', url: q.onlineLink || `${SITE_URL}${q.url}` } : { '@type': 'Place', name: q.venue, address: { '@type': 'PostalAddress', streetAddress: q.address, addressLocality: q.town, postalCode: q.postcode, addressCountry: q.country } },
-    image: q.photos.map((p) => SITE_URL + p), url: SITE_URL + q.url,
-    ...(q.fee && !q.fee.free && q.fee.amount != null ? { offers: { '@type': 'Offer', price: q.fee.amount, priceCurrency: q.fee.currency || 'GBP' } } : q.fee && q.fee.free ? { isAccessibleForFree: true } : {}),
-    ...(q.host ? { organizer: { '@type': 'Organization', name: q.host, url: q.website || undefined } } : {}),
-  } : null;
+  const ld = q.next ? eventLd(q, desc) : null;
   const chips = (keys, map) => keys.map((k) => `<span class="chip">${esc(map[k])}</span>`).join('');
   const facts = [
     ['When', esc(q.when) || 'Check with the venue'],
